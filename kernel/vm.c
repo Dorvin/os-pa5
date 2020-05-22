@@ -15,6 +15,29 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+int refer_count[32*1024];
+
+int
+get_refer_count(uint64 pa)
+{
+  int index = (pa - 0x80000000)/(4*1024);
+  return refer_count[index];
+}
+
+void
+incr_refer_count(uint64 pa)
+{
+  int index = (pa - 0x80000000)/(4*1024);
+  refer_count[index]++;
+}
+
+void
+decr_refer_count(uint64 pa)
+{
+  int index = (pa - 0x80000000)/(4*1024);
+  refer_count[index]--;
+}
+
 /*
  * create a direct-map page table for the kernel and
  * turn on paging. called early, in supervisor mode.
@@ -161,6 +184,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    incr_refer_count(pa);
     if(a == last)
       break;
     a += PGSIZE;
@@ -192,7 +216,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if(get_refer_count(pa) == 1){
+        kfree((void*)pa);
+      }
+      decr_refer_count(pa);
     }
     *pte = 0;
     if(a == last)
@@ -233,7 +260,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
-uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int read_only)
 {
   char *mem;
   uint64 a;
@@ -250,10 +277,18 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-      kfree(mem);
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
+    if(read_only){
+      if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_X|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
+    } else {
+      if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
     }
   }
   return newsz;
@@ -321,7 +356,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -330,19 +365,31 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    if(flags & PTE_W){
+      flags = flags & (~PTE_W);
+      printf("writable!\n");
+      *pte = PA2PTE(pa) | flags;
+    } else {
+      printf("not writable!\n");
+    }
+    /*
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    */
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      //kfree(mem);
+      //goto err;
+      printf("error in uvmcopy\n");
     }
   }
   return 0;
 
+/*
  err:
   uvmunmap(new, 0, i, 1);
   return -1;
+*/
 }
 
 // mark a PTE invalid for user access.

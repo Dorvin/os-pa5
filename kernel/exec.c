@@ -49,8 +49,13 @@ exec(char *path, char **argv)
       goto bad;
     if(ph.vaddr + ph.memsz < ph.vaddr)
       goto bad;
-    if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
-      goto bad;
+    if(ph.flags & ELF_PROG_FLAG_WRITE){
+      if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, 0)) == 0)
+        goto bad;
+    } else {
+      if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, 1)) == 0)
+        goto bad;
+    }
 #ifndef SNU
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -68,7 +73,7 @@ exec(char *path, char **argv)
   // Allocate two pages at the next page boundary.
   // Use the second as the user stack.
   sz = PGROUNDUP(sz);
-  if((sz = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
+  if((sz = uvmalloc(pagetable, sz, sz + 2*PGSIZE, 0)) == 0)
     goto bad;
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
@@ -126,6 +131,42 @@ exec(char *path, char **argv)
   return -1;
 }
 
+
+
+// Return the address of the PTE in page table pagetable
+// that corresponds to virtual address va.  If alloc!=0,
+// create any required page-table pages.
+//
+// The risc-v Sv39 scheme has three levels of page-table
+// pages. A page-table page contains 512 64-bit PTEs.
+// A 64-bit virtual address is split into five fields:
+//   39..63 -- must be zero.
+//   30..38 -- 9 bits of level-2 index.
+//   21..39 -- 9 bits of level-1 index.
+//   12..20 -- 9 bits of level-0 index.
+//    0..12 -- 12 bits of byte offset within the page.
+pte_t *
+get_pte(pagetable_t pagetable, uint64 va, int alloc)
+{
+  if(va >= MAXVA)
+    panic("get_pte");
+
+  for(int level = 2; level > 0; level--) {
+    pte_t *pte = &pagetable[PX(level, va)];
+    if(*pte & PTE_V) {
+      pagetable = (pagetable_t)PTE2PA(*pte);
+    } else {
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+        return 0;
+      memset(pagetable, 0, PGSIZE);
+      *pte = PA2PTE(pagetable) | PTE_V;
+    }
+  }
+  return &pagetable[PX(0, va)];
+}
+
+
+
 // Load a program segment into pagetable at virtual address va.
 // va must be page-aligned
 // and the pages from va to va+sz must already be mapped.
@@ -135,6 +176,7 @@ loadseg(pagetable_t pagetable, uint64 va, struct inode *ip, uint offset, uint sz
 {
   uint i, n;
   uint64 pa;
+  pte_t *pte;
 
 #ifndef SNU
   if((va % PGSIZE) != 0)
@@ -143,6 +185,26 @@ loadseg(pagetable_t pagetable, uint64 va, struct inode *ip, uint offset, uint sz
 
   for(i = 0; i < sz; i += PGSIZE){
     pa = walkaddr(pagetable, va + i);
+    pte = get_pte(pagetable, va + i, 0);
+    if(i == 0){
+      printf("pte flags...\n");
+      if(*pte & PTE_V){
+        printf("valid\n");
+      }
+      if(*pte & PTE_R){
+        printf("readable\n");
+      }
+      if(*pte & PTE_W){
+        printf("writable\n");
+      }
+      if(*pte & PTE_X){
+        printf("exectable\n");
+      }
+      if(*pte & PTE_U){
+        printf("user can access\n");
+      }
+    }
+    
 #ifdef SNU
     if ((va % PGSIZE) != 0)
       pa += (va & (PGSIZE - 1));

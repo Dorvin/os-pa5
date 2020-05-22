@@ -178,6 +178,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAPFRAME, PGSIZE, 0);
   if(sz > 0)
     uvmfree(pagetable, sz);
+  //exec 이랑 freeproc이 다 이 친구 부르니까 여기서 뭔가 처리해줘야함...
 #ifdef SNU
   // BUG: pagetables are not released when p->sz is zero
   else
@@ -233,7 +234,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n, 0)) == 0) {
       return -1;
     }
   } else if(n < 0){

@@ -65,6 +65,29 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15) {
+    uint64 pa = v2p(p->pagetable, r_stval());
+    pte_t *pte = get_pte(p->pagetable, r_stval(), 0);
+    if(pa != PTE2PA(*pte)){
+      printf("error! pa is not equal to pte");
+    }
+    char *mem;
+    uint flags = PTE_FLAGS(*pte);
+    if(get_refer_count(pa) > 1){
+      decr_refer_count(pa);
+      if((mem = kalloc()) == 0){
+        printf("error! kalloc failed\n");
+      }
+      memmove(mem, (char*)pa, PGSIZE);
+      flags = flags | PTE_W;
+      if(mappages(p->pagetable, r_stval(), PGSIZE, (uint64)mem, flags) != 0){
+        printf("error in uvmcopy\n");
+      }
+    } else {
+      if(!(*pte & PTE_X)){
+        *pte = *pte | PTE_W;
+      }
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

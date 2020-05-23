@@ -455,10 +455,23 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  char *mem;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+    if(get_ref_count(pa0) > 1) {
+      decr_ref_count(pa0);
+      if((mem = kalloc()) == 0){
+        printf("err: kalloc in cow failed\n");
+      }
+      memmove(mem, (char*)pa0, PGSIZE);
+      if(mappages(pagetable, va0, PGSIZE, (uint64)mem, PTE_X|PTE_R|PTE_U|PTE_W) != 0){
+        printf("err: mappages in cow failed\n");
+      }
+      incr_ref_count((uint64)mem);
+      pa0 = (uint64)mem;
+    }
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);

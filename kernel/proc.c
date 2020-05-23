@@ -251,7 +251,7 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
-  printf("fork is called on pid %d\n", p->pid);
+  //printf("fork is called on pid %d\n", p->pid);
 
   // Allocate process.
   if((np = allocproc()) == 0){

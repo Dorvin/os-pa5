@@ -228,7 +228,7 @@ void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
 {
   //for debuging
-  printf("uvmunmap called on va %p because of exit or exec!\n", va);
+  //printf("uvmunmap called on va %p because of exit or exec!\n", va);
   uint64 a, last;
   pte_t *pte;
   uint64 pa;
@@ -246,13 +246,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       pa = PTE2PA(*pte);
-      printf("do_free on ref_count %d \n", get_ref_count(pa));
+      //printf("do_free on ref_count %d \n", get_ref_count(pa));
       //for debuging
       if(get_ref_count(pa) < 2)
         kfree((void*)pa);
       if(get_ref_count(pa) > 0)
         decr_ref_count(pa);
-      printf("after free, ref count is %d\n", get_ref_count(pa));
+      //printf("after free, ref count is %d\n", get_ref_count(pa));
     }
     *pte = 0;
     if(a == last)
@@ -319,14 +319,14 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int ro)
     }
     */
     if(ro){
-      printf("uvmalloc called on Read Only... It is mapped to pa: %p\n", mem);
+      //printf("uvmalloc called on Read Only... It is mapped to pa: %p\n", mem);
       if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_X|PTE_R|PTE_U) != 0){
         kfree(mem);
         uvmdealloc(pagetable, a, oldsz);
         return 0;
       }
     } else {
-      printf("uvmalloc called on Writable... It is mapped to pa: %p\n", mem);
+      //printf("uvmalloc called on Writable... It is mapped to pa: %p\n", mem);
       if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_U) != 0){
         kfree(mem);
         uvmdealloc(pagetable, a, oldsz);
@@ -410,20 +410,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if(flags & PTE_X){
-      printf("uvmcopy on read only page(w%d x%d v%d): just remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
+      //printf("uvmcopy on read only page(w%d x%d v%d): just remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
       mappages(new, i, PGSIZE, (uint64)pa, flags);
     } else {
-      printf("uvmcopy on writable page(w%d x%d v%d): make not writable, remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
+      //printf("uvmcopy on writable page(w%d x%d v%d): make not writable, remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
       flags = flags & (~PTE_W);
       *pte = PA2PTE(pa) | flags;
-      printf("changed pte(w%d x%d v%d) & ", *pte & PTE_W, *pte & PTE_X, *pte & PTE_V);
-      printf("changed flags(w%d x%d v%d)\n", flags & PTE_W, flags & PTE_X, flags & PTE_V);
+      //printf("changed pte(w%d x%d v%d) & ", *pte & PTE_W, *pte & PTE_X, *pte & PTE_V);
+      //printf("changed flags(w%d x%d v%d)\n", flags & PTE_W, flags & PTE_X, flags & PTE_V);
       if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
         goto err;
       }
     }
     incr_ref_count(pa);
-    printf("after uvmcopy, page's ref count is %d\n", get_ref_count(pa));
+    //printf("after uvmcopy, page's ref count is %d\n", get_ref_count(pa));
     /*
     if((mem = kalloc()) == 0)
       goto err;

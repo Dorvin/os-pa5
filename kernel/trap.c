@@ -76,7 +76,7 @@ usertrap(void)
       //printf("pid(%d) dealing with cow on va: %p//pa: %p/ref.c %d\n", p->pid, r_stval(), pa, get_ref_count(pa));
       uint flags = PTE_FLAGS(*pte);
       char *mem;
-      if(flags & PTE_X){
+      if(0){
         printf("err: trying to write on .text\n");
         p->killed = 1;
       } else {

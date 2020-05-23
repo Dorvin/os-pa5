@@ -286,6 +286,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
+  incr_ref_count((uint64)mem);
 }
 
 // Allocate PTEs and physical memory to grow process from oldsz to
@@ -414,6 +415,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       kfree(mem);
       goto err;
     }
+    incr_ref_count((uint64)mem);
   }
   return 0;
 

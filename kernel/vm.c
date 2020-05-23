@@ -208,8 +208,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
+    /*
     if(*pte & PTE_V)
       panic("remap");
+    */
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -398,7 +400,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -407,6 +409,22 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    if(flags & PTE_X){
+      printf("uvmcopy on read only page(w%d x%d v%d): just remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
+      mappages(new, i, PGSIZE, (uint64)pa, flags);
+    } else {
+      printf("uvmcopy on writable page(w%d x%d v%d): make not writable, remapping on va: %p & pa: %p\n", flags & PTE_W, flags & PTE_X, flags & PTE_V, i, pa);
+      flags = flags & (~PTE_W);
+      *pte = PA2PTE(pa) | flags;
+      printf("changed pte(w%d x%d v%d) & ", *pte & PTE_W, *pte & PTE_X, *pte & PTE_V);
+      printf("changed flags(w%d x%d v%d)\n", flags & PTE_W, flags & PTE_X, flags & PTE_V);
+      if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+        goto err;
+      }
+    }
+    incr_ref_count(pa);
+    printf("after uvmcopy, page's ref count is %d\n", get_ref_count(pa));
+    /*
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
@@ -416,6 +434,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       goto err;
     }
     incr_ref_count((uint64)mem);
+    */
   }
   return 0;
 

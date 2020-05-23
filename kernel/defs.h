@@ -176,6 +176,9 @@ pte_t *         walk(pagetable_t, uint64, int);
 int             get_ref_count(uint64);
 void            incr_ref_count(uint64);
 void            decr_ref_count(uint64);
+int             get_read_only(uint64);
+void            set_read_only(uint64);
+void            clear_read_only(uint64);
 #ifdef SNU
 void            freewalk(pagetable_t);
 uint64          v2p(pagetable_t, uint64);

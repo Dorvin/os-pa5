@@ -13,6 +13,7 @@ pagetable_t kernel_pagetable;
 
 //tracing vm referencing information
 int ref_count[32*1024];
+int read_only[32*1024];
 
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
@@ -63,6 +64,53 @@ decr_ref_count(uint64 pa)
     return;
   }
   ref_count[index]--;
+}
+
+int
+get_read_only(uint64 pa)
+{
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return 1;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return 1;
+  }
+  return read_only[index];
+}
+
+void
+set_read_only(uint64 pa)
+{
+  //printf("pa: %p\n", pa);
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return;
+  }
+  //printf("index is %d\n",index);
+  read_only[index] = 1;
+}
+
+void
+clear_read_only(uint64 pa)
+{
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return;
+  }
+  read_only[index] = 0;
 }
 
 /*
@@ -320,6 +368,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int ro)
     */
     if(ro){
       //printf("uvmalloc called on Read Only... It is mapped to pa: %p\n", mem);
+      set_read_only((uint64)mem);
       if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_X|PTE_R|PTE_U) != 0){
         kfree(mem);
         uvmdealloc(pagetable, a, oldsz);

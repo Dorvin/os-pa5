@@ -11,9 +11,59 @@
  */
 pagetable_t kernel_pagetable;
 
+//tracing vm referencing information
+int ref_count[32*1024];
+
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+int
+get_ref_count(uint64 pa)
+{
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return -1;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return -1;
+  }
+  return ref_count[index];
+}
+
+void
+incr_ref_count(uint64 pa)
+{
+  //printf("pa: %p\n", pa);
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return;
+  }
+  //printf("index is %d\n",index);
+  ref_count[index]++;
+}
+
+void
+decr_ref_count(uint64 pa)
+{
+  if(pa < (uint64)0x80000000){
+    //printf("pa is small than start... may be kernel...\n");
+    return;
+  }
+  int index = (pa - (uint64)0x80000000)/((uint64)(4*1024));
+  if(32*1024 < index){
+    printf("pa overflow!\n");
+    return;
+  }
+  ref_count[index]--;
+}
 
 /*
  * create a direct-map page table for the kernel and
@@ -23,6 +73,7 @@ extern char trampoline[]; // trampoline.S
 void
 kvminit()
 {
+  //printf("kvminit called kalloc for kernel_pagetable\n");
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
@@ -70,12 +121,13 @@ kvminithart()
 //   21..39 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..12 -- 12 bits of byte offset within the page.
-static pte_t *
+pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
     panic("walk");
-
+  if(alloc)
+    //printf("walk called kalloc for pagetable\n");
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
     if(*pte & PTE_V) {
@@ -158,9 +210,13 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
+    /*
     if(*pte & PTE_V)
       panic("remap");
+    */
     *pte = PA2PTE(pa) | perm | PTE_V;
+    //increase ref count to target pa
+    //incr_ref_count(pa);
     if(a == last)
       break;
     a += PGSIZE;
@@ -175,10 +231,11 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
 {
+  //for debuging
+  printf("uvmunmap called because of exit or exec!\n");
   uint64 a, last;
   pte_t *pte;
   uint64 pa;
-
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
@@ -192,7 +249,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      //printf("do_free on ref_count %d \n", get_ref_count(pa));
+      //for debuging
+      if(get_ref_count(pa) < 2)
+        kfree((void*)pa);
+      if(get_ref_count(pa) > 0)
+        decr_ref_count(pa);
+      //printf("after free, ref count is %d\n", get_ref_count(pa));
     }
     *pte = 0;
     if(a == last)
@@ -206,6 +269,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
 pagetable_t
 uvmcreate()
 {
+  //printf("uvmcreate called kalloc\n");
   pagetable_t pagetable;
   pagetable = (pagetable_t) kalloc();
   if(pagetable == 0)
@@ -221,7 +285,7 @@ void
 uvminit(pagetable_t pagetable, uchar *src, uint sz)
 {
   char *mem;
-
+  //printf("uvminit called kalloc\n");
   if(sz >= PGSIZE)
     panic("inituvm: more than a page");
   mem = kalloc();
@@ -233,7 +297,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
-uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int ro)
 {
   char *mem;
   uint64 a;
@@ -244,17 +308,34 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   oldsz = PGROUNDUP(oldsz);
   a = oldsz;
   for(; a < newsz; a += PGSIZE){
+    printf("uvmalloc called kalloc\n");
     mem = kalloc();
     if(mem == 0){
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
     memset(mem, 0, PGSIZE);
+    /*
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+    */
+    if(ro){
+      if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_X|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
+    } else {
+      if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
+    }
+    incr_ref_count((uint64)mem);
   }
   return newsz;
 }
@@ -318,10 +399,12 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  //for debuging
+  //printf("fork called uvmcopy!\n");
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -330,6 +413,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+    if(flags & PTE_X){
+      printf("read only.. just remapping on va: %p & pa: %p\n", i, pa);
+      mappages(new, i, PGSIZE, (uint64)pa, flags);
+    } else {
+      printf("make writable not writable and remapping on va: %p & pa: %p\n", i, pa);
+      flags = flags & (~PTE_W);
+      *pte = PA2PTE(pa) | flags;
+      mappages(new, i, PGSIZE, (uint64)pa, flags);
+    }
+    incr_ref_count(pa);
+    /*
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
@@ -337,12 +431,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       kfree(mem);
       goto err;
     }
+    incr_ref_count((uint64)mem);
+    */
   }
   return 0;
-
+ /*
  err:
   uvmunmap(new, 0, i, 1);
   return -1;
+ */
 }
 
 // mark a PTE invalid for user access.

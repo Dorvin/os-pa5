@@ -430,6 +430,7 @@ sys_exec(void)
       argv[i] = 0;
       break;
     }
+    //printf("sys_exec called kalloc\n");
     argv[i] = kalloc();
     if(argv[i] == 0)
       panic("sys_exec kalloc");

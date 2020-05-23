@@ -67,6 +67,7 @@ kfree(void *pa)
   freemem++;
 #endif
   release(&kmem.lock);
+  //decr_ref_count((uint64)pa);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -92,5 +93,7 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+  //incr_ref_count((uint64)r);
+  //printf("kalloc allocated pa: %p\n", (uint64)r);
   return (void*)r;
 }

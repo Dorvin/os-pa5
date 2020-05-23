@@ -65,6 +65,37 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15) {
+    pte_t *pte;
+    if((pte = walk(p->pagetable, r_stval(), 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    uint64 pa = PTE2PA(*pte);
+    printf("pid(%d) dealing with cow on va: %p//pa: %p\n", p->pid, r_stval(), pa);
+    uint flags = PTE_FLAGS(*pte);
+    char *mem;
+    if(flags & PTE_X){
+      printf("err: trying to write on .text\n");
+      p->killed = 1;
+    } else {
+      printf("ref_count = %d\n", get_ref_count(pa));
+      if(get_ref_count(pa) > 1) {
+        decr_ref_count(pa);
+        printf("trap called kalloc\n");
+        if((mem = kalloc()) == 0){
+          printf("err: kalloc in cow failed\n");
+        }
+        printf("cow! moved to pa: %p\n", mem);
+        memmove(mem, (char*)pa, PGSIZE);
+        if(mappages(p->pagetable, r_stval(), PGSIZE, (uint64)mem, flags|PTE_W) != 0){
+          printf("err: mappages in cow failed\n");
+        }
+        incr_ref_count((uint64)mem);
+        printf("ref_count of new mapped pf = %d\n", get_ref_count((uint64)mem));
+      } else {
+        printf("just remapping\n");
+        *pte = *pte | PTE_W;
+      }
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

@@ -28,7 +28,7 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
+      //printf("procinit called kalloc\n");
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
@@ -104,7 +104,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
+  printf("allocproc called kalloc\n");
   // Allocate a trapframe page.
   if((p->tf = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
@@ -233,7 +233,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n, 0)) == 0) {
       return -1;
     }
   } else if(n < 0){

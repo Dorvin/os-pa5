@@ -12,6 +12,7 @@ static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uin
 int
 exec(char *path, char **argv)
 {
+  printf("exec called\n");
   char *s, *last;
   int i, off;
   uint64 argc, sz, sp, ustack[MAXARG+1], stackbase;
@@ -49,8 +50,17 @@ exec(char *path, char **argv)
       goto bad;
     if(ph.vaddr + ph.memsz < ph.vaddr)
       goto bad;
+    /*
     if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
+    */
+    if(ph.flags & ELF_PROG_FLAG_WRITE){
+      if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, 0)) == 0)
+        goto bad;
+    } else {
+      if((sz = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, 1)) == 0)
+        goto bad;
+    }
 #ifndef SNU
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -68,7 +78,7 @@ exec(char *path, char **argv)
   // Allocate two pages at the next page boundary.
   // Use the second as the user stack.
   sz = PGROUNDUP(sz);
-  if((sz = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
+  if((sz = uvmalloc(pagetable, sz, sz + 2*PGSIZE, 0)) == 0)
     goto bad;
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;

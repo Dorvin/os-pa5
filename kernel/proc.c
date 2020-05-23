@@ -233,7 +233,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    if((sz = uvmalloc(p->pagetable, sz, sz + n, 0)) == 0) {
       return -1;
     }
   } else if(n < 0){
@@ -251,6 +251,7 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
+  printf("fork is called on pid %d\n", p->pid);
 
   // Allocate process.
   if((np = allocproc()) == 0){
